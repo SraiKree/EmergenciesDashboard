@@ -18,13 +18,10 @@ const SOCKET_SERVER_URL = "http://localhost:3000"; // For production, use enviro
 const socket = io(SOCKET_SERVER_URL);
 
 function App() {
-  // State to hold all incoming alerts
   const [alerts, setAlerts] = useState<SosAlert[]>([]);
 
-  // Handler for action taken on an alert (e.g., dismissed, acknowledged)
   const handleActionTaken = (alertToRemove: SosAlert) => {
     setAlerts(prevAlerts => prevAlerts.filter(alert => 
-      // Only remove the exact alert that matches both userId AND timestamp
       !(alert.userId === alertToRemove.userId && 
         alert.timestamp === alertToRemove.timestamp &&
         alert.location.latitude === alertToRemove.location.latitude &&
@@ -33,23 +30,37 @@ function App() {
   };
 
   useEffect(() => {
-    // Handler for new alerts from the server
     const handleNewAlert = (newAlertData: SosAlert) => {
       console.log("Dashboard received new alert:", newAlertData);
-      // Add the new alert to the beginning of the array
-      setAlerts(prevAlerts => [newAlertData, ...prevAlerts]);
+      
+      setAlerts(prevAlerts => {
+        // Check if we already have an alert from this user at this location
+        const existingAlertIndex = prevAlerts.findIndex(alert => 
+          alert.userId === newAlertData.userId &&
+          Math.abs(alert.location.latitude - newAlertData.location.latitude) < 0.0001 && // About 11 meters
+          Math.abs(alert.location.longitude - newAlertData.location.longitude) < 0.0001
+        );
+
+        // If we found an existing alert
+        if (existingAlertIndex !== -1) {
+          // Create a new array with the updated alert at the beginning
+          const updatedAlerts = [...prevAlerts];
+          updatedAlerts.splice(existingAlertIndex, 1);
+          return [newAlertData, ...updatedAlerts];
+        }
+
+        // If no existing alert was found, add the new one at the beginning
+        return [newAlertData, ...prevAlerts];
+      });
     };
 
-    // Start listening for the "new-sos" event
     socket.on("new-sos", handleNewAlert);
 
-    // Clean up the listener when the component unmounts
     return () => {
       socket.off("new-sos", handleNewAlert);
     };
-  }, []); // Empty array ensures this effect runs only once on mount
+  }, []);
 
-  // The App component now simply renders the SosDashboard and passes the alerts data to it.
   return (
     <SosDashboard alerts={alerts} onActionTaken={handleActionTaken} />
   );
